@@ -102,6 +102,32 @@ export async function fetchPreview(file: File): Promise<PreviewResult> {
   return { url: URL.createObjectURL(blob), width, height };
 }
 
+/** Render a single certificate with the exact font/position/colour settings
+ *  and return a pixel-accurate PNG preview — what the downloaded PDF will look like. */
+export async function fetchCertificatePreview(
+  file: File,
+  name: string,
+  style: TextStyle,
+): Promise<PreviewResult> {
+  const form = new FormData();
+  form.append("template", file);
+  form.append("name", name || "Sample Name");
+  form.append("x", String(style.x));
+  form.append("y", String(style.y));
+  form.append("font", style.font);
+  form.append("fontSize", String(style.fontSize));
+  form.append("color", style.color);
+  form.append("alignment", style.alignment);
+  const response = await request("/api/preview-certificate", {
+    method: "POST",
+    body: form,
+  });
+  const blob = await response.blob();
+  const width = Number(response.headers.get("X-Page-Width")) || 595;
+  const height = Number(response.headers.get("X-Page-Height")) || 842;
+  return { url: URL.createObjectURL(blob), width, height };
+}
+
 export async function generateCertificates(
   file: File,
   names: string[],

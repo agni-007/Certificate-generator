@@ -21,6 +21,7 @@ from .generator import (
     build_zip,
     generate_pdfs,
     load_template,
+    render_certificate_png,
     render_preview_png,
 )
 from .parser import extract_names_from_file
@@ -199,6 +200,44 @@ async def preview(
             "Cache-Control": "no-store",
             "X-Preview-Extension": extension,
             # Page box in PDF points, so the UI can scale point font sizes.
+            "X-Page-Width": f"{page_width:.2f}",
+            "X-Page-Height": f"{page_height:.2f}",
+        },
+    )
+
+@app.post("/api/preview-certificate")
+async def preview_certificate(
+    template: Annotated[
+        UploadFile | None, File(description="A PDF, PNG, JPG or JPEG")
+    ] = None,
+    name: Annotated[str, Form(description="Name to place on the certificate")] = "Sample Name",
+    x: Annotated[float, Form()] = 50.0,
+    y: Annotated[float, Form()] = 52.0,
+    font: Annotated[str, Form()] = DEFAULT_FONT,
+    fontSize: Annotated[float, Form()] = 37.0,
+    color: Annotated[str, Form()] = "#ffffff",
+    alignment: Annotated[str, Form()] = DEFAULT_ALIGNMENT,
+) -> Response:
+    """Render a single personalised certificate to PNG — pixel-exact preview."""
+    if template is None:
+        raise AppError(MSG_NO_TEMPLATE)
+    data = await read_upload(template, settings.max_template_bytes)
+    if not data:
+        raise AppError(MSG_NO_TEMPLATE)
+    validate_template_upload(template.filename, data)
+    clean = (name or "Sample Name").strip() or "Sample Name"
+    style = build_style(x, y, font, fontSize, color, alignment)
+    document = load_template(data, template.filename)
+    try:
+        png, page_width, page_height = render_certificate_png(document, clean, style)
+        logger.info("Certificate preview rendered for %r", clean)
+    finally:
+        document.close()
+    return Response(
+        content=png,
+        media_type="image/png",
+        headers={
+            "Cache-Control": "no-store",
             "X-Page-Width": f"{page_width:.2f}",
             "X-Page-Height": f"{page_height:.2f}",
         },

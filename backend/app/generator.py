@@ -349,17 +349,48 @@ def build_zip(files: Sequence[Path], zip_path: Path) -> Path:
     return zip_path
 
 
+def _rasterise(document: pymupdf.Document) -> tuple[bytes, float, float]:
+    """Rasterise page 1 to PNG. Returns (png_bytes, page_width_pt, page_height_pt)."""
+    page = document[0]
+    target_dpi = settings.preview_dpi
+    width_pt = page.rect.width
+    height_pt = page.rect.height
+    if width_pt > 0 and (width_pt * target_dpi / 72.0) > settings.preview_max_pixels:
+        target_dpi = settings.preview_max_pixels * 72.0 / width_pt
+    scale = target_dpi / 72.0
+    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
+    return pixmap.tobytes("png"), width_pt, height_pt
+
+
 def render_preview_png(document: pymupdf.Document) -> bytes:
     """Rasterise page 1 of the template exactly as it will be printed."""
     try:
-        page = document[0]
-        target_dpi = settings.preview_dpi
-        width_pt = page.rect.width
-        if width_pt > 0 and (width_pt * target_dpi / 72.0) > settings.preview_max_pixels:
-            target_dpi = settings.preview_max_pixels * 72.0 / width_pt
-        scale = target_dpi / 72.0
-        pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False)
-        return pixmap.tobytes("png")
+        png, _, _ = _rasterise(document)
+        return png
+    except AppError:
+        raise
     except Exception as error:  # noqa: BLE001
         logger.warning("Could not render preview: %s", error)
         raise AppError(MSG_BAD_FILE) from None
+
+
+def render_certificate_png(template: pymupdf.Document, name: str, style: TextStyle) -> tuple[bytes, float, float]:
+    """Generate one personalised certificate and return it as a PNG.
+
+    This is the pixel-exact equivalent of what the user will get in the downloaded
+    PDF — rendered at the same DPI used for the blank template preview so the
+    browser can display both at the same canvas size.
+    """
+    try:
+        cert_bytes = render_certificate(template, name, style)
+        cert_doc = pymupdf.open(stream=cert_bytes, filetype="pdf")
+        try:
+            png, width_pt, height_pt = _rasterise(cert_doc)
+        finally:
+            cert_doc.close()
+        return png, width_pt, height_pt
+    except AppError:
+        raise
+    except Exception as error:  # noqa: BLE001
+        logger.warning("Could not render certificate preview: %s", error)
+        raise AppError(MSG_GENERATION_FAILED, status_code=500) from None
