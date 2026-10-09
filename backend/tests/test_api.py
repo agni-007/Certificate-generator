@@ -194,6 +194,32 @@ class TestPreview:
             "Unsupported template format. Please upload PDF, PNG, JPG, or JPEG."
         )
 
+
+class TestPreviewCertificate:
+    def test_preview_certificate_returns_png(self, client, pdf_template):
+        response = client.post(
+            "/api/preview-certificate",
+            files={"template": ("cert.pdf", pdf_template, "application/pdf")},
+            data={
+                "name": "Jane Doe",
+                "x": "50.0",
+                "y": "50.0",
+                "font": "times-italic",
+                "fontSize": "37",
+                "color": "#000000",
+                "alignment": "center",
+            },
+        )
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "image/png"
+        assert response.content.startswith(b"\x89PNG")
+        assert "x-page-width" in response.headers
+        assert "x-page-height" in response.headers
+
+    def test_preview_certificate_no_file(self, client):
+        response = client.post("/api/preview-certificate")
+        assert response.status_code == 400
+
     def test_preview_rejects_corrupt_pdf(self, client):
         response = client.post(
             "/api/preview", files={"template": ("t.pdf", b"%PDF-1.4 broken", "application/pdf")}
