@@ -20,11 +20,11 @@ export default function TextSettings({ style, options, onChange }: Props) {
   const fonts = options?.fonts ?? [{ value: style.font, label: style.font }];
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 min-w-0 overflow-hidden">
       {/* Row 1: Font + Font Size */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 min-w-0">
         {/* Font selector */}
-        <label className="block space-y-1.5">
+        <label className="block space-y-1.5 min-w-0">
           <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
             Font
           </span>
@@ -41,43 +41,38 @@ export default function TextSettings({ style, options, onChange }: Props) {
           </select>
         </label>
 
-        {/* Font size stepper */}
-        <div className="space-y-1.5">
-          <span className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
-            Font Size
-          </span>
-          <div className="flex items-center gap-2">
+        {/* Font size stepper & slider */}
+        <div className="space-y-1.5 min-w-0">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">
+              Font Size
+            </span>
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={6}
+                max={200}
+                value={style.fontSize}
+                onChange={(event) => {
+                  const size = Number(event.target.value);
+                  if (!Number.isNaN(size) && size >= 6 && size <= 200)
+                    onChange({ fontSize: size });
+                }}
+                className="w-14 rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-right text-xs font-semibold text-slate-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-100"
+              />
+              <span className="text-xs font-medium text-slate-400">pt</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               aria-label="Decrease font size"
               onClick={() =>
                 onChange({ fontSize: Math.max(6, style.fontSize - 1) })
               }
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-lg font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 active:scale-95"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 active:scale-95"
             >
               −
-            </button>
-            <input
-              type="number"
-              min={6}
-              max={200}
-              value={style.fontSize}
-              onChange={(event) => {
-                const size = Number(event.target.value);
-                if (!Number.isNaN(size) && size >= 6 && size <= 200)
-                  onChange({ fontSize: size });
-              }}
-              className="w-16 rounded-lg border border-slate-200 bg-white py-2 text-center text-sm font-semibold text-slate-800 shadow-sm focus:border-indigo-400 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-            />
-            <button
-              type="button"
-              aria-label="Increase font size"
-              onClick={() =>
-                onChange({ fontSize: Math.min(200, style.fontSize + 1) })
-              }
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-lg font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 active:scale-95"
-            >
-              +
             </button>
             <input
               type="range"
@@ -87,16 +82,26 @@ export default function TextSettings({ style, options, onChange }: Props) {
               onChange={(event) =>
                 onChange({ fontSize: Number(event.target.value) })
               }
-              className="flex-1 accent-indigo-600"
+              className="min-w-0 flex-1 cursor-pointer accent-indigo-600"
             />
+            <button
+              type="button"
+              aria-label="Increase font size"
+              onClick={() =>
+                onChange({ fontSize: Math.min(200, style.fontSize + 1) })
+              }
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-base font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 active:scale-95"
+            >
+              +
+            </button>
           </div>
         </div>
       </div>
 
       {/* Row 2: Colour + Alignment */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 min-w-0">
         {/* Colour picker */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <span className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
             Colour
           </span>
@@ -128,7 +133,7 @@ export default function TextSettings({ style, options, onChange }: Props) {
         </div>
 
         {/* Alignment */}
-        <div className="space-y-1.5">
+        <div className="space-y-1.5 min-w-0">
           <span className="block text-xs font-medium text-slate-500 uppercase tracking-wider">
             Alignment
           </span>

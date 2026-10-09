@@ -55,6 +55,18 @@ export default function CertificatePreview({
   const renderedUrlRef = useRef<string | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(0);
 
+  // Track the exact style payload of the currently loaded renderedUrl
+  const loadedRenderKeyRef = useRef<string>("");
+  const currentRenderKey = JSON.stringify({
+    font: style.font,
+    fontSize: style.fontSize,
+    color: style.color,
+    alignment: style.alignment,
+    x: style.x,
+    y: style.y,
+    sampleName,
+  });
+
   // ResizeObserver for canvas width
   useEffect(() => {
     const element = surfaceRef.current;
@@ -75,7 +87,7 @@ export default function CertificatePreview({
     };
   }, []);
 
-  // Dynamic exact rendering from backend PyMuPDF
+  // Background pixel-exact PyMuPDF rendering with 150ms debounce
   useEffect(() => {
     if (!file) {
       if (renderedUrlRef.current) {
@@ -83,13 +95,14 @@ export default function CertificatePreview({
         renderedUrlRef.current = null;
       }
       setRenderedUrl(null);
+      loadedRenderKeyRef.current = "";
       return;
     }
 
     let cancelled = false;
     setIsRendering(true);
 
-    // 120ms debounce so rapid slider moves or key presses don't spam the server
+    const requestKey = currentRenderKey;
     const timer = setTimeout(async () => {
       try {
         const result = await fetchCertificatePreview(file, sampleName, style);
@@ -99,13 +112,14 @@ export default function CertificatePreview({
           URL.revokeObjectURL(renderedUrlRef.current);
         }
         renderedUrlRef.current = result.url;
+        loadedRenderKeyRef.current = requestKey;
         setRenderedUrl(result.url);
       } catch (err) {
         console.warn("Failed to render exact preview:", err);
       } finally {
         if (!cancelled) setIsRendering(false);
       }
-    }, 120);
+    }, 150);
 
     return () => {
       cancelled = true;
@@ -120,6 +134,7 @@ export default function CertificatePreview({
     style.alignment,
     style.x,
     style.y,
+    currentRenderKey,
   ]);
 
   if (!templateUrl) {
@@ -138,6 +153,9 @@ export default function CertificatePreview({
     );
   }
 
+  // Check if loaded PyMuPDF image is 100% up to date with current parameters
+  const isUpToDate =
+    Boolean(renderedUrl) && loadedRenderKeyRef.current === currentRenderKey;
   const activeImageUrl = renderedUrl || templateUrl;
 
   const scale = canvasWidth > 0 && pageWidth > 0 ? canvasWidth / pageWidth : 1;
@@ -195,7 +213,7 @@ export default function CertificatePreview({
           setIsDragging(false);
         }}
       >
-        {/* Exact PyMuPDF rendered certificate image (falls back to blank template if loading first time) */}
+        {/* Background image: template or PyMuPDF render */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={activeImageUrl}
@@ -204,18 +222,12 @@ export default function CertificatePreview({
           className="absolute inset-0 h-full w-full object-contain select-none"
         />
 
-        {/* Small subtle loading indicator when updating rendered preview */}
-        {isRendering && (
-          <div className="absolute top-2 right-2 flex items-center gap-1.5 rounded-full bg-slate-900/75 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm shadow-sm">
-            <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            Updating exact output…
-          </div>
-        )}
-
         {/* 
-          Draggable position overlay:
-          - While dragging OR before exact render loads: show live CSS text overlay for 60fps movement.
-          - When exact rendered image is ready: show a subtle bounding target outline around the text.
+          Live text overlay vs. Exact render overlay:
+          - If NOT up to date (e.g. user is dragging slider, changing font, position, color) OR dragging on canvas:
+            Render live 60fps CSS text element. It updates on EVERY FRAME immediately with 0ms delay!
+          - If UP TO DATE with PyMuPDF exact render:
+            Show subtle target boundary so text is from PyMuPDF, with hover target.
         */}
         <div
           role="slider"
@@ -247,9 +259,10 @@ export default function CertificatePreview({
             userSelect: "none",
           }}
         >
-          {isDragging || !renderedUrl ? (
+          {isDragging || !isUpToDate ? (
+            /* Instant 60fps live CSS text element — updates 0ms as slider moves */
             <span
-              className="block whitespace-nowrap rounded px-1"
+              className="block whitespace-nowrap rounded px-1 transition-none"
               style={{
                 fontFamily: fontStack(style.font),
                 fontSize: `${fontSizePx}px`,
@@ -263,6 +276,7 @@ export default function CertificatePreview({
               {sampleName}
             </span>
           ) : (
+            /* Exact PyMuPDF render is active — show subtle position outline */
             <div className="relative rounded border border-indigo-400/50 bg-indigo-500/10 px-2 py-1 transition-all group-hover:border-indigo-600 group-hover:bg-indigo-500/20 group-focus-visible:ring-2 group-focus-visible:ring-indigo-500">
               <span className="sr-only">{sampleName}</span>
               <span className="pointer-events-none absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-mono text-white opacity-0 transition-opacity group-hover:opacity-100">
