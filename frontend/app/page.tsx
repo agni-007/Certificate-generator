@@ -10,7 +10,6 @@ import {
   ApiError,
   downloadBlob,
   extractNames,
-  fetchCertificatePreview,
   fetchOptions,
   fetchPreview,
   generateCertificates,
@@ -78,18 +77,12 @@ export default function Home() {
   const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE);
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ blob: Blob; count: number } | null>(null);
+  const [result, setResult] = useState<{ blob: Blob; count: number } | null>(
+    null,
+  );
   const [generateError, setGenerateError] = useState<string | null>(null);
 
-  // Rendered certificate preview (pixel-exact from backend)
-  const [renderedPreview, setRenderedPreview] = useState<TemplateState | null>(null);
-  const [renderingPreview, setRenderingPreview] = useState(false);
-  const [renderPreviewError, setRenderPreviewError] = useState<string | null>(null);
-  // Whether to show rendered vs. blank template preview
-  const [showRendered, setShowRendered] = useState(false);
-
   const templateUrlRef = useRef<string | null>(null);
-  const renderedUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     fetchOptions()
@@ -99,11 +92,10 @@ export default function Home() {
       });
   }, []);
 
-  // Revoke object URLs on unmount
+  // Revoke object URL on unmount
   useEffect(
     () => () => {
       if (templateUrlRef.current) URL.revokeObjectURL(templateUrlRef.current);
-      if (renderedUrlRef.current) URL.revokeObjectURL(renderedUrlRef.current);
     },
     [],
   );
@@ -137,14 +129,15 @@ export default function Home() {
       setTemplateBusy(true);
       try {
         const preview = await fetchPreview(file);
-        if (templateUrlRef.current) URL.revokeObjectURL(templateUrlRef.current);
+        if (templateUrlRef.current)
+          URL.revokeObjectURL(templateUrlRef.current);
         templateUrlRef.current = preview.url;
-        setTemplate({ file, url: preview.url, width: preview.width, height: preview.height });
-        // Reset rendered preview when template changes
-        if (renderedUrlRef.current) URL.revokeObjectURL(renderedUrlRef.current);
-        renderedUrlRef.current = null;
-        setRenderedPreview(null);
-        setShowRendered(false);
+        setTemplate({
+          file,
+          url: preview.url,
+          width: preview.width,
+          height: preview.height,
+        });
         setProgress(0);
         setResult(null);
       } catch (error) {
@@ -163,11 +156,7 @@ export default function Home() {
   const handleClearTemplate = useCallback(() => {
     if (templateUrlRef.current) URL.revokeObjectURL(templateUrlRef.current);
     templateUrlRef.current = null;
-    if (renderedUrlRef.current) URL.revokeObjectURL(renderedUrlRef.current);
-    renderedUrlRef.current = null;
     setTemplate(null);
-    setRenderedPreview(null);
-    setShowRendered(false);
     setTemplateError(null);
     setResult(null);
     setProgress(0);
@@ -176,7 +165,9 @@ export default function Home() {
   const handleNamesFile = useCallback(async (file: File) => {
     setNamesError(null);
     if (!SHEET_EXTENSIONS.includes(extensionOf(file.name))) {
-      setNamesError("Unsupported file format. Please upload an .xlsx or .csv file.");
+      setNamesError(
+        "Unsupported file format. Please upload an .xlsx or .csv file.",
+      );
       return;
     }
     setNamesBusy(true);
@@ -207,7 +198,12 @@ export default function Home() {
     setProgress(0.04);
     setResult(null);
     try {
-      const generated = await generateCertificates(template.file, names, style, setProgress);
+      const generated = await generateCertificates(
+        template.file,
+        names,
+        style,
+        setProgress,
+      );
       setResult(generated);
       setProgress(1);
     } catch (error) {
@@ -222,36 +218,8 @@ export default function Home() {
     }
   }, [template, names, style]);
 
-  /** Call the backend to render ONE certificate as a pixel-exact PNG. */
-  const handleRenderPreview = useCallback(async () => {
-    if (!template) return;
-    setRenderingPreview(true);
-    setRenderPreviewError(null);
-    try {
-      const previewName = names[0] ?? "Sample Name";
-      const rendered = await fetchCertificatePreview(template.file, previewName, style);
-      if (renderedUrlRef.current) URL.revokeObjectURL(renderedUrlRef.current);
-      renderedUrlRef.current = rendered.url;
-      setRenderedPreview({ file: template.file, url: rendered.url, width: rendered.width, height: rendered.height });
-      setShowRendered(true);
-    } catch (error) {
-      setRenderPreviewError(
-        error instanceof ApiError
-          ? error.message
-          : "Could not render preview. Please try again.",
-      );
-    } finally {
-      setRenderingPreview(false);
-    }
-  }, [template, names, style]);
-
   const sampleName = names[0] ?? "Sample Name";
   const canGenerate = Boolean(template) && names.length > 0 && !generating;
-
-  // The URL shown in the preview pane: rendered (pixel-exact) when toggled, else blank template
-  const previewUrl = showRendered && renderedPreview ? renderedPreview.url : (template?.url ?? null);
-  const previewWidth = (showRendered && renderedPreview ? renderedPreview.width : template?.width) ?? 595;
-  const previewHeight = (showRendered && renderedPreview ? renderedPreview.height : template?.height) ?? 842;
 
   return (
     <div className="min-h-screen">
@@ -302,8 +270,6 @@ export default function Home() {
               onChange={(patch) => {
                 setStyle((current) => ({ ...current, ...patch }));
                 setResult(null);
-                // Clear rendered preview when settings change so user knows to re-render
-                setShowRendered(false);
               }}
             />
           </Section>
@@ -323,86 +289,21 @@ export default function Home() {
         </div>
 
         <div className="lg:sticky lg:top-6 lg:h-fit">
-          <Section
-            step={4}
-            title={showRendered ? "Preview (exact output)" : "Preview (template)"}
-            hint={sampleName}
-          >
-            {/* Toggle between blank template and pixel-exact rendered preview */}
-            {template && (
-              <div className="mb-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={renderingPreview || !template}
-                  onClick={handleRenderPreview}
-                  className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-semibold text-indigo-700 shadow-sm transition hover:bg-indigo-100 disabled:opacity-50"
-                >
-                  {renderingPreview ? (
-                    <>
-                      <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
-                      Rendering…
-                    </>
-                  ) : (
-                    <>🎯 Render Exact Preview</>
-                  )}
-                </button>
-
-                {renderedPreview && (
-                  <button
-                    type="button"
-                    onClick={() => setShowRendered((v) => !v)}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-                  >
-                    {showRendered ? "Show template" : "Show rendered"}
-                  </button>
-                )}
-
-                {renderPreviewError && (
-                  <span className="text-xs text-red-600">{renderPreviewError}</span>
-                )}
-              </div>
-            )}
-
-            {showRendered && renderedPreview ? (
-              /* Pixel-exact rendered certificate — just show the image, no drag overlay */
-              <div
-                className="relative overflow-hidden rounded-xl border border-indigo-200 bg-white shadow-sm"
-                style={{ aspectRatio: `${previewWidth} / ${previewHeight || 1}` }}
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={previewUrl ?? ""}
-                  alt="Exact certificate preview"
-                  className="absolute inset-0 h-full w-full object-contain"
-                />
-                <div className="absolute bottom-2 left-0 right-0 flex justify-center">
-                  <span className="rounded-full bg-indigo-600/80 px-2.5 py-0.5 text-[10px] font-semibold text-white backdrop-blur-sm">
-                    Exact output · {names[0] ?? "Sample Name"}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              /* Blank template with draggable overlay for positioning */
-              <CertificatePreview
-                url={template?.url ?? null}
-                pageWidth={previewWidth}
-                pageHeight={previewHeight}
-                sampleName={sampleName}
-                style={style}
-                onPosition={(x, y) =>
-                  setStyle((current) => ({ ...current, x, y }))
-                }
-              />
-            )}
+          <Section step={4} title="Preview" hint={sampleName}>
+            <CertificatePreview
+              file={template?.file ?? null}
+              templateUrl={template?.url ?? null}
+              pageWidth={template?.width ?? 595}
+              pageHeight={template?.height ?? 842}
+              sampleName={sampleName}
+              style={style}
+              onPosition={(x, y) =>
+                setStyle((current) => ({ ...current, x, y }))
+              }
+            />
           </Section>
         </div>
       </main>
-
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-5 text-xs text-slate-500 sm:px-6">
-          Files are processed temporarily and never stored.
-        </div>
-      </footer>
     </div>
   );
 }

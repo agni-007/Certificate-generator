@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { TextStyle } from "@/lib/api";
+import { fetchCertificatePreview, type TextStyle } from "@/lib/api";
 
 const FONT_STACKS: Record<string, string> = {
   times: '"Times New Roman", Times, serif',
@@ -23,7 +23,8 @@ export function fontStack(font: string): string {
 }
 
 interface Props {
-  url: string | null;
+  file: File | null;
+  templateUrl: string | null;
   pageWidth: number;
   pageHeight: number;
   sampleName: string;
@@ -37,7 +38,8 @@ const clamp = (value: number, low: number, high: number) =>
 const STEP = 0.5;
 
 export default function CertificatePreview({
-  url,
+  file,
+  templateUrl,
   pageWidth,
   pageHeight,
   sampleName,
@@ -46,8 +48,14 @@ export default function CertificatePreview({
 }: Props) {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const draggingRef = useRef(false);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const [renderedUrl, setRenderedUrl] = useState<string | null>(null);
+  const [isRendering, setIsRendering] = useState(false);
+  const renderedUrlRef = useRef<string | null>(null);
   const [canvasWidth, setCanvasWidth] = useState(0);
 
+  // ResizeObserver for canvas width
   useEffect(() => {
     const element = surfaceRef.current;
     if (!element) return;
@@ -56,9 +64,65 @@ export default function CertificatePreview({
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [url]);
+  }, [templateUrl]);
 
-  if (!url) {
+  // Clean up Object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (renderedUrlRef.current) {
+        URL.revokeObjectURL(renderedUrlRef.current);
+      }
+    };
+  }, []);
+
+  // Dynamic exact rendering from backend PyMuPDF
+  useEffect(() => {
+    if (!file) {
+      if (renderedUrlRef.current) {
+        URL.revokeObjectURL(renderedUrlRef.current);
+        renderedUrlRef.current = null;
+      }
+      setRenderedUrl(null);
+      return;
+    }
+
+    let cancelled = false;
+    setIsRendering(true);
+
+    // 120ms debounce so rapid slider moves or key presses don't spam the server
+    const timer = setTimeout(async () => {
+      try {
+        const result = await fetchCertificatePreview(file, sampleName, style);
+        if (cancelled) return;
+
+        if (renderedUrlRef.current) {
+          URL.revokeObjectURL(renderedUrlRef.current);
+        }
+        renderedUrlRef.current = result.url;
+        setRenderedUrl(result.url);
+      } catch (err) {
+        console.warn("Failed to render exact preview:", err);
+      } finally {
+        if (!cancelled) setIsRendering(false);
+      }
+    }, 120);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    file,
+    sampleName,
+    style.font,
+    style.fontSize,
+    style.color,
+    style.alignment,
+    style.x,
+    style.y,
+  ]);
+
+  if (!templateUrl) {
     return (
       <div className="flex aspect-[4/3] items-center justify-center rounded-xl border-2 border-dashed border-slate-200 bg-slate-50 px-6 text-center">
         <div className="space-y-1">
@@ -74,14 +138,11 @@ export default function CertificatePreview({
     );
   }
 
+  const activeImageUrl = renderedUrl || templateUrl;
+
   const scale = canvasWidth > 0 && pageWidth > 0 ? canvasWidth / pageWidth : 1;
   const fontSizePx = Math.max(1, style.fontSize * scale);
 
-  // Mirror the backend's per-name centering:
-  // X is always the ANCHOR. For "center", the text element itself is centred on
-  // that anchor. Because CSS text-align doesn't help here (it aligns inside the
-  // container, not the anchor), we use transform translateX to shift the element
-  // so its own centre / left-edge / right-edge sits exactly on the anchor point.
   const translateX =
     style.alignment === "center"
       ? "-50%"
@@ -106,41 +167,61 @@ export default function CertificatePreview({
         ref={surfaceRef}
         className="relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm"
         style={{ aspectRatio: `${pageWidth} / ${pageHeight || 1}` }}
+        onPointerDown={(event) => {
+          event.preventDefault();
+          draggingRef.current = true;
+          setIsDragging(true);
+          moveFromPointer(event.clientX, event.clientY);
+          (event.currentTarget as HTMLElement).setPointerCapture(
+            event.pointerId,
+          );
+        }}
+        onPointerMove={(event) => {
+          if (draggingRef.current) {
+            moveFromPointer(event.clientX, event.clientY);
+          }
+        }}
+        onPointerUp={(event) => {
+          draggingRef.current = false;
+          setIsDragging(false);
+          try {
+            (event.currentTarget as HTMLElement).releasePointerCapture(
+              event.pointerId,
+            );
+          } catch {}
+        }}
+        onPointerCancel={() => {
+          draggingRef.current = false;
+          setIsDragging(false);
+        }}
       >
+        {/* Exact PyMuPDF rendered certificate image (falls back to blank template if loading first time) */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
-          src={url}
-          alt="Certificate template preview"
+          src={activeImageUrl}
+          alt="Certificate preview"
           draggable={false}
-          className="absolute inset-0 h-full w-full object-contain"
+          className="absolute inset-0 h-full w-full object-contain select-none"
         />
 
-        {/* Draggable name label — exactly mirrors how the backend places it */}
+        {/* Small subtle loading indicator when updating rendered preview */}
+        {isRendering && (
+          <div className="absolute top-2 right-2 flex items-center gap-1.5 rounded-full bg-slate-900/75 px-2.5 py-1 text-[10px] font-medium text-white backdrop-blur-sm shadow-sm">
+            <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+            Updating exact output…
+          </div>
+        )}
+
+        {/* 
+          Draggable position overlay:
+          - While dragging OR before exact render loads: show live CSS text overlay for 60fps movement.
+          - When exact rendered image is ready: show a subtle bounding target outline around the text.
+        */}
         <div
           role="slider"
           tabIndex={0}
           aria-label="Name position"
           aria-valuenow={Math.round(style.y)}
-          onPointerDown={(event) => {
-            event.preventDefault();
-            draggingRef.current = true;
-            (event.currentTarget as HTMLElement).setPointerCapture(
-              event.pointerId,
-            );
-          }}
-          onPointerMove={(event) => {
-            if (draggingRef.current)
-              moveFromPointer(event.clientX, event.clientY);
-          }}
-          onPointerUp={(event) => {
-            draggingRef.current = false;
-            (event.currentTarget as HTMLElement).releasePointerCapture(
-              event.pointerId,
-            );
-          }}
-          onPointerCancel={() => {
-            draggingRef.current = false;
-          }}
           onKeyDown={(event) => {
             const step = event.shiftKey ? 2 : STEP;
             const map: Record<string, [number, number]> = {
@@ -157,34 +238,44 @@ export default function CertificatePreview({
               clamp(style.y + delta[1], 0, 100),
             );
           }}
-          className="absolute cursor-move outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+          className="absolute cursor-move outline-none group"
           style={{
             left: `${style.x}%`,
             top: `${style.y}%`,
             transform: `translate(${translateX}, -50%)`,
             touchAction: "none",
             userSelect: "none",
-            // Subtle drop-shadow so text is visible on any background
-            filter: "drop-shadow(0 1px 2px rgba(0,0,0,0.45))",
           }}
         >
-          <span
-            className="block whitespace-nowrap"
-            style={{
-              fontFamily: fontStack(style.font),
-              fontSize: `${fontSizePx}px`,
-              color: style.color,
-              textAlign: style.alignment,
-            }}
-          >
-            {sampleName}
-          </span>
+          {isDragging || !renderedUrl ? (
+            <span
+              className="block whitespace-nowrap rounded px-1"
+              style={{
+                fontFamily: fontStack(style.font),
+                fontSize: `${fontSizePx}px`,
+                color: style.color,
+                textAlign: style.alignment,
+                filter: "drop-shadow(0 1px 3px rgba(0,0,0,0.6))",
+                outline: "2px dashed #6366f1",
+                backgroundColor: "rgba(99, 102, 241, 0.15)",
+              }}
+            >
+              {sampleName}
+            </span>
+          ) : (
+            <div className="relative rounded border border-indigo-400/50 bg-indigo-500/10 px-2 py-1 transition-all group-hover:border-indigo-600 group-hover:bg-indigo-500/20 group-focus-visible:ring-2 group-focus-visible:ring-indigo-500">
+              <span className="sr-only">{sampleName}</span>
+              <span className="pointer-events-none absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-slate-900/80 px-1.5 py-0.5 text-[9px] font-mono text-white opacity-0 transition-opacity group-hover:opacity-100">
+                X {style.x.toFixed(1)}% · Y {style.y.toFixed(1)}%
+              </span>
+            </div>
+          )}
         </div>
       </div>
 
       {/* ─── Info bar ─── */}
       <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
-        <span>Drag the name or use the controls below · arrow keys to nudge</span>
+        <span>Click or drag anywhere to position · arrow keys to nudge</span>
         <span className="shrink-0 font-mono text-slate-600">
           X {style.x.toFixed(1)}% · Y {style.y.toFixed(1)}%
         </span>
