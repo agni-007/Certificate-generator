@@ -153,6 +153,18 @@ class TestPreview:
         assert response.headers["content-type"] == "image/png"
         assert response.content.startswith(b"\x89PNG")
 
+    @pytest.mark.parametrize("kind", ["pdf", "png", "jpg"])
+    def test_preview_reports_page_size_in_points(self, client, templates, kind):
+        response = client.post("/api/preview", files={"template": templates[kind]})
+        assert response.status_code == 200
+        width = float(response.headers["x-page-width"])
+        height = float(response.headers["x-page-height"])
+        assert width > 0
+        assert height > 0
+        # The PNG must match the reported page box.
+        pixmap = pymupdf.Pixmap(io.BytesIO(response.content))
+        assert pixmap.width / pixmap.height == pytest.approx(width / height, rel=0.02)
+
     @pytest.mark.parametrize(
         "filename", ["t.png", "t.jpg", "t.jpeg"], ids=["png", "jpg", "jpeg"]
     )

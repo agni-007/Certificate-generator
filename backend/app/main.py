@@ -180,20 +180,28 @@ async def preview(
     document = load_template(data, template.filename)
     try:
         page = document[0]
+        page_width = page.rect.width
+        page_height = page.rect.height
         png = render_preview_png(document)
         logger.info(
             "Preview ready for %s (%s, %.0fx%.0f pt)",
             template.filename,
             extension,
-            page.rect.width,
-            page.rect.height,
+            page_width,
+            page_height,
         )
     finally:
         document.close()
     return Response(
         content=png,
         media_type="image/png",
-        headers={"Cache-Control": "no-store", "X-Preview-Extension": extension},
+        headers={
+            "Cache-Control": "no-store",
+            "X-Preview-Extension": extension,
+            # Page box in PDF points, so the UI can scale point font sizes.
+            "X-Page-Width": f"{page_width:.2f}",
+            "X-Page-Height": f"{page_height:.2f}",
+        },
     )
 
 
