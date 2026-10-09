@@ -32,9 +32,17 @@ export default function TextSettings({ style, options, onChange }: Props) {
         </select>
       </label>
 
-      <label className="block space-y-1.5">
+      <div className="space-y-1.5">
         <span className="text-xs font-medium text-slate-600">Font size</span>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            aria-label="Decrease font size"
+            onClick={() => onChange({ fontSize: Math.max(6, style.fontSize - 1) })}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-50 text-base font-bold text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            -
+          </button>
           <input
             type="number"
             min={6}
@@ -42,20 +50,30 @@ export default function TextSettings({ style, options, onChange }: Props) {
             value={style.fontSize}
             onChange={(event) => {
               const size = Number(event.target.value);
-              if (!Number.isNaN(size)) onChange({ fontSize: size });
+              if (!Number.isNaN(size) && size >= 6 && size <= 200) {
+                onChange({ fontSize: size });
+              }
             }}
-            className="w-20 rounded-lg border border-slate-300 bg-white px-2.5 py-2 text-sm focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-100"
+            className="w-16 rounded-lg border border-slate-300 bg-white py-2 text-center text-sm font-medium focus:border-accent-600 focus:outline-none focus:ring-2 focus:ring-accent-100"
           />
+          <button
+            type="button"
+            aria-label="Increase font size"
+            onClick={() => onChange({ fontSize: Math.min(200, style.fontSize + 1) })}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-slate-50 text-base font-bold text-slate-700 transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            +
+          </button>
           <input
             type="range"
             min={6}
             max={200}
             value={style.fontSize}
             onChange={(event) => onChange({ fontSize: Number(event.target.value) })}
-            className="w-full accent-indigo-600"
+            className="ml-1 w-full accent-indigo-600"
           />
         </div>
-      </label>
+      </div>
 
       <div className="space-y-1.5">
         <span className="text-xs font-medium text-slate-600">Colour</span>
@@ -88,25 +106,21 @@ export default function TextSettings({ style, options, onChange }: Props) {
 
       <div className="space-y-1.5">
         <span className="text-xs font-medium text-slate-600">Alignment</span>
-        <div className="inline-flex w-full overflow-hidden rounded-lg border border-slate-300 bg-white">
-          {(options?.alignments ?? ["left", "center", "right"]).map(
-            (alignment) => (
-              <button
-                key={alignment}
-                type="button"
-                onClick={() =>
-                  onChange({ alignment: alignment as TextStyle["alignment"] })
-                }
-                className={`flex-1 px-2 py-2 text-sm capitalize transition-colors ${
-                  style.alignment === alignment
-                    ? "bg-accent-600 text-white"
-                    : "text-slate-600 hover:bg-slate-50"
-                }`}
-              >
-                {alignment}
-              </button>
-            ),
-          )}
+        <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-slate-300 bg-white">
+          {(["left", "center", "right"] as const).map((alignment) => (
+            <button
+              key={alignment}
+              type="button"
+              onClick={() => onChange({ alignment })}
+              className={`px-1.5 py-2 text-xs font-medium capitalize transition-colors ${
+                style.alignment === alignment
+                  ? "bg-accent-600 text-white"
+                  : "text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              {alignment}
+            </button>
+          ))}
         </div>
       </div>
     </div>

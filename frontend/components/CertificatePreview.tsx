@@ -173,10 +173,69 @@ export default function CertificatePreview({
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-        <span>Drag the name to position it · arrow keys to nudge</span>
-        <span className="tabular-nums">
-          x {style.x.toFixed(1)}% · y {style.y.toFixed(1)}%
+        <span>Drag the name to position it, or use the directional controls below</span>
+        <span className="tabular-nums font-mono font-medium text-slate-700">
+          X: {style.x.toFixed(1)}% · Y: {style.y.toFixed(1)}%
         </span>
+      </div>
+
+      <div className="flex flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+        <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+          Position Controls
+        </span>
+        <div className="grid grid-cols-3 gap-1.5">
+          <div />
+          <button
+            type="button"
+            aria-label="Move text up"
+            title="Move up"
+            onClick={() => onPosition(style.x, clamp(style.y - 0.5, 0, 100))}
+            className="flex h-9 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            ⬆️
+          </button>
+          <div />
+
+          <button
+            type="button"
+            aria-label="Move text left"
+            title="Move left"
+            onClick={() => onPosition(clamp(style.x - 0.5, 0, 100), style.y)}
+            className="flex h-9 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            ⬅️
+          </button>
+          <button
+            type="button"
+            aria-label="Center position"
+            title="Reset to center (50%, 52%)"
+            onClick={() => onPosition(50, 52)}
+            className="flex h-9 px-2.5 items-center justify-center rounded-lg border border-accent-300 bg-accent-50 text-xs font-semibold text-accent-700 shadow-sm transition-colors hover:bg-accent-100 active:bg-accent-200"
+          >
+            🎯 Center
+          </button>
+          <button
+            type="button"
+            aria-label="Move text right"
+            title="Move right"
+            onClick={() => onPosition(clamp(style.x + 0.5, 0, 100), style.y)}
+            className="flex h-9 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            ➡️
+          </button>
+
+          <div />
+          <button
+            type="button"
+            aria-label="Move text down"
+            title="Move down"
+            onClick={() => onPosition(style.x, clamp(style.y + 0.5, 0, 100))}
+            className="flex h-9 w-11 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 shadow-sm transition-colors hover:bg-slate-100 active:bg-slate-200"
+          >
+            ⬇️
+          </button>
+          <div />
+        </div>
       </div>
     </div>
   );

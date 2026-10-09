@@ -139,7 +139,7 @@ async def options() -> dict[str, object]:
     return {
         "fonts": [{"value": key, "label": label} for key, label in FONT_LABELS.items()],
         "defaultFont": DEFAULT_FONT,
-        "alignments": sorted(ALIGNMENTS),
+        "alignments": ["left", "center", "right"],
         "defaultAlignment": DEFAULT_ALIGNMENT,
         "maxNames": settings.max_names,
         "maxTemplateSizeMb": settings.max_template_bytes // (1024 * 1024),
