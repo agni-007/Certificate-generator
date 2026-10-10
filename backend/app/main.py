@@ -132,25 +132,29 @@ async def unhandled_error_handler(request, exc: Exception):  # noqa: ARG001
     return JSONResponse(status_code=500, content={"detail": MSG_GENERATION_FAILED})
 
 
-async def read_upload(upload: UploadFile | None, max_bytes: int) -> bytes:
+def read_upload(upload: UploadFile | None, max_bytes: int) -> bytes:
+    """Read an upload synchronously (callers run in a worker thread)."""
     if upload is None or not upload.filename:
         return b""
     chunks: list[bytes] = []
     total = 0
+    source = upload.file
     while True:
-        chunk = await upload.read(UPLOAD_CHUNK)
+        chunk = source.read(UPLOAD_CHUNK)
         if not chunk:
             break
         total += len(chunk)
         if total > max_bytes:
             raise AppError("The uploaded file is too large.", status_code=413)
         chunks.append(chunk)
-    await upload.close()
+    source.close()
     return b"".join(chunks)
 
 
 @app.get("/health")
 async def health() -> dict[str, str]:
+    # Deliberately async and trivial so it stays responsive while the worker
+    # threads are busy generating certificates.
     return {"status": "ok"}
 
 
@@ -173,12 +177,12 @@ async def options() -> dict[str, object]:
 
 
 @app.post("/api/names")
-async def extract_names(
+def extract_names(
     file: Annotated[UploadFile | None, File(description="An .xlsx or .csv file")] = None,
 ) -> dict[str, object]:
     if file is None:
         raise AppError("Please upload an Excel or CSV file.")
-    data = await read_upload(file, settings.max_spreadsheet_bytes)
+    data = read_upload(file, settings.max_spreadsheet_bytes)
     if not data:
         raise AppError("Please upload an Excel or CSV file.")
     extension = validate_spreadsheet_upload(file.filename, data)
@@ -188,7 +192,7 @@ async def extract_names(
 
 
 @app.post("/api/preview")
-async def preview(
+def preview(
     template: Annotated[
         UploadFile | None, File(description="A PDF, PNG, JPG or JPEG")
     ] = None,
@@ -196,7 +200,7 @@ async def preview(
     """Render page 1 of the template to PNG so the UI can show it exactly."""
     if template is None:
         raise AppError(MSG_NO_TEMPLATE)
-    data = await read_upload(template, settings.max_template_bytes)
+    data = read_upload(template, settings.max_template_bytes)
     if not data:
         raise AppError(MSG_NO_TEMPLATE)
     extension = validate_template_upload(template.filename, data)
@@ -228,7 +232,7 @@ async def preview(
     )
 
 @app.post("/api/preview-certificate")
-async def preview_certificate(
+def preview_certificate(
     template: Annotated[
         UploadFile | None, File(description="A PDF, PNG, JPG or JPEG")
     ] = None,
@@ -243,7 +247,7 @@ async def preview_certificate(
     """Render a single personalised certificate to PNG — pixel-exact preview."""
     if template is None:
         raise AppError(MSG_NO_TEMPLATE)
-    data = await read_upload(template, settings.max_template_bytes)
+    data = read_upload(template, settings.max_template_bytes)
     if not data:
         raise AppError(MSG_NO_TEMPLATE)
     validate_template_upload(template.filename, data)
@@ -267,7 +271,7 @@ async def preview_certificate(
 
 
 @app.post("/api/generate")
-async def generate(
+def generate(
     template: Annotated[UploadFile | None, File(description="A PDF, PNG, JPG or JPEG")] = None,
     names: Annotated[str, Form(description="JSON array or newline separated text")] = "",
     x: Annotated[float, Form()] = 50.0,
@@ -291,7 +295,7 @@ async def generate(
 
     style = build_style(x, y, font, fontSize, color, alignment)
 
-    data = await read_upload(template, settings.max_template_bytes)
+    data = read_upload(template, settings.max_template_bytes)
     if not data:
         raise AppError(MSG_NO_TEMPLATE)
     validate_template_upload(template.filename, data)

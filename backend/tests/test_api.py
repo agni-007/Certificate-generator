@@ -470,6 +470,52 @@ class TestGenerationErrors:
         assert "pymupdf" not in response.text.lower()
 
 
+class TestEventLoopResponsiveness:
+    def test_health_stays_responsive_during_generation(self, pdf_template, monkeypatch):
+        """CPU-bound generation must not block the async event loop."""
+        import asyncio
+        import time
+
+        import httpx
+
+        from app import generator as generator_module
+
+        real_render = generator_module.render_certificate
+
+        def slow_render(*args, **kwargs):
+            time.sleep(0.003)
+            return real_render(*args, **kwargs)
+
+        monkeypatch.setattr(generator_module, "render_certificate", slow_render)
+        names = [f"Name {index:03d}" for index in range(400)]
+
+        async def scenario() -> tuple[int, float, int]:
+            transport = httpx.ASGITransport(app=main_module.app)
+            async with httpx.AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                generation = asyncio.create_task(
+                    client.post(
+                        "/api/generate",
+                        data={"names": json.dumps(names), "x": "50", "y": "50"},
+                        files={"template": ("c.pdf", pdf_template, "application/pdf")},
+                    )
+                )
+                # Let the request reach the worker thread before probing health.
+                await asyncio.sleep(0.08)
+                started = time.perf_counter()
+                health = await client.get("/health")
+                latency = time.perf_counter() - started
+                generated = await generation
+                return health.status_code, latency, generated.status_code
+
+        status, latency, generated_status = asyncio.run(scenario())
+        assert status == 200
+        assert generated_status == 200
+        # Blocking the loop would make this wait for the whole generation.
+        assert latency < 0.5, f"/health took {latency:.2f}s during generation"
+
+
 class TestTempFiles:
     def test_temporary_files_are_cleaned(self, client, templates):
         before = set(settings.temp_root.glob("req-*")) if settings.temp_root.exists() else set()
