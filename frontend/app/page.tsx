@@ -67,20 +67,8 @@ function extensionOf(filename: string): string {
 }
 
 export default function Home() {
-  const [options, setOptions] = useState<ApiOptions | null>(null);
-  const [template, setTemplate] = useState<TemplateState | null>(null);
-  const [templateBusy, setTemplateBusy] = useState(false);
-  const [templateError, setTemplateError] = useState<string | null>(null);
-  const [namesText, setNamesText] = useState("");
-  const [namesBusy, setNamesBusy] = useState(false);
-  const [namesError, setNamesError] = useState<string | null>(null);
-  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE);
-  const [generating, setGenerating] = useState(false);
-  const [progress, setProgress] = useState(0);
-  const [result, setResult] = useState<{ blob: Blob; count: number } | null>(
-    null,
-  );
-  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+
 
   const templateUrlRef = useRef<string | null>(null);
 
@@ -89,7 +77,13 @@ export default function Home() {
       .then(setOptions)
       .catch((error: unknown) => {
         console.warn("Could not load API options", error);
+        setOptionsError(
+          error instanceof ApiError
+            ? error.message
+            : "Could not load API options. Using fallback limits.",
+        );
       });
+
   }, []);
 
   // Revoke object URL on unmount
@@ -193,6 +187,10 @@ export default function Home() {
 
   const handleGenerate = useCallback(async () => {
     if (!template) return;
+    if (names.length > maxNames) {
+      setGenerateError(`Too many names. Please keep to ${maxNames} names or fewer.`);
+      return;
+    }
     setGenerating(true);
     setGenerateError(null);
     setProgress(0.04);
@@ -219,7 +217,8 @@ export default function Home() {
   }, [template, names, style]);
 
   const sampleName = names[0] ?? "Sample Name";
-  const canGenerate = Boolean(template) && names.length > 0 && !generating;
+  const canGenerate = Boolean(template) && names.length > 0 && !generating && names.length <= maxNames;
+
 
   return (
     <div className="min-h-screen">
@@ -247,6 +246,9 @@ export default function Home() {
               onSelect={handleTemplate}
               onClear={handleClearTemplate}
             />
+            {optionsError ? (
+              <p className="mt-2 text-xs text-amber-700">{optionsError}</p>
+            ) : null}
           </Section>
 
           <Section step={2} title="Names" hint={`${names.length} added`}>

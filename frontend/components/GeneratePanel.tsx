@@ -56,9 +56,10 @@ export default function GeneratePanel({
             />
           </div>
           <p className="text-center text-xs tabular-nums text-slate-600">
-            Generating certificates… {percent}% · {Math.round(progress * nameCount)}{" "}
-            / {nameCount}
+            Generating certificates… (estimate) {percent}% ·{" "}
+            {Math.min(Math.round(progress * nameCount), nameCount)} / {nameCount}
           </p>
+
         </div>
       ) : null}
 

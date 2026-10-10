@@ -23,8 +23,7 @@ export default function NameInput({
   const [dragging, setDragging] = useState(false);
 
   const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
-  const count = Math.min(lines.length, maxNames);
-
+  const overLimit = count > maxNames;
   return (
     <div className="space-y-3">
       <textarea
@@ -86,6 +85,11 @@ export default function NameInput({
       </div>
 
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {overLimit ? (
+        <p className="text-sm text-red-600">
+          Too many names. Please keep to {maxNames} names or fewer.
+        </p>
+      ) : null}
     </div>
   );
 }
