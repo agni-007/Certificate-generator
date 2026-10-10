@@ -29,6 +29,7 @@ Upload any certificate template (PDF, PNG, JPG, JPEG), import names manually or 
 - 👥 **Flexible Name Input**: Type/paste names line-by-line or upload `.xlsx` / `.csv` spreadsheets (auto-detects `Name` column).
 - 🎯 **Interactive Visual Preview**: Drag and position names directly on the live template rendered to scale.
 - 🎨 **Text Styling**: Customize font (14 standard PDF fonts), font size, text color, and alignment (left, center, right).
+- 🔤 **Complex Scripts**: Devanagari, Malayalam and Tamil names are shaped correctly (conjuncts and vowel signs) using bundled OFL Noto fonts.
 - 📦 **Bulk ZIP Export**: Generates sanitized individual PDFs per recipient and packages them into a `certificates.zip`.
 - 🗂️ **Merged PDF Export**: Optionally returns one multi-page `certificates.pdf` with the template stored only once (much smaller for large image templates).
 - 🧹 **Zero Storage Overhead**: Per-request temporary scratch spaces with auto-cleanup on request end and background purging of stale workspaces.
@@ -104,6 +105,24 @@ npm run build
 - `MAX_SPREADSHEET_SIZE_MB`: Max Excel/CSV upload size (defaults to `10`).
 - `MAX_NAMES`: Max names per bulk generation request (defaults to `2000`).
 - `MAX_TOTAL_OUTPUT_MB`: Max estimated size of an individual ZIP export, `template size × names` (defaults to `1024`). Requests over the limit return HTTP 413; the `merged` output mode is not affected.
+
+---
+
+## 🔤 Supported Scripts
+
+Latin names use the built-in PDF fonts. For complex scripts the backend detects
+the script and shapes the name with a bundled [Noto](https://fonts.google.com/noto)
+font instead:
+
+| Script | Font |
+| --- | --- |
+| Devanagari (Hindi, Marathi, …) | `NotoSansDevanagari-Regular.ttf` |
+| Malayalam | `NotoSansMalayalam-Regular.ttf` |
+| Tamil | `NotoSansTamil-Regular.ttf` |
+
+The fonts live in `backend/app/fonts/` and are licensed under the
+[SIL Open Font License](backend/app/fonts/OFL.txt). Names that mix scripts fall
+back to the Latin font for Latin characters.
 
 ---
 

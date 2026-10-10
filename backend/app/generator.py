@@ -19,6 +19,7 @@ from typing import Sequence
 import pymupdf
 from PIL import Image, UnidentifiedImageError
 
+from .indic import bundled_font, detect_script, insert_shaped_text, rgb_from_floats
 from .utils import (
     AppError,
     IMAGE_EXTENSIONS,
@@ -319,6 +320,44 @@ def _needs_unicode_font(name: str) -> bool:
     return False
 
 
+def _draw_name(page: pymupdf.Page, name: str, style: TextStyle) -> None:
+    """Draw a name, shaping complex scripts when a bundled font covers them.
+
+    Latin (and other Latin-1) names keep using the standard PDF fonts, so their
+    output stays byte-for-byte identical to before.
+    """
+    if not _needs_unicode_font(name):
+        _write_name(page, name, style)
+        return
+
+    script = detect_script(name)
+    if bundled_font(script) is not None:
+        try:
+            insert_shaped_text(
+                page,
+                name,
+                font_size=style.font_size,
+                anchor_x=page.rect.width * (style.x / 100.0),
+                anchor_y=page.rect.height * (style.y / 100.0),
+                alignment=style.alignment,
+                color=rgb_from_floats(style.color),
+            )
+        except Exception as error:  # noqa: BLE001
+            logger.exception("Shaped rendering failed for %r: %s", name, error)
+            raise AppError(MSG_GENERATION_FAILED, status_code=500) from None
+        return
+
+    # Legacy path: a system Unicode font without complex-script shaping.
+    fontfile = fallback_font_file()
+    if fontfile is None:
+        raise AppError(
+            "This name uses characters that cannot be rendered on this "
+            "server. Please use a Latin or English name.",
+            status_code=400,
+        )
+    _write_name(page, name, style, fontfile=fontfile)
+
+
 def render_certificate(
     template: pymupdf.Document, name: str, style: TextStyle
 ) -> bytes:
@@ -327,16 +366,7 @@ def render_certificate(
     try:
         document.insert_pdf(template)
         page = document[0]
-        fontfile = None
-        if _needs_unicode_font(name):
-            fontfile = fallback_font_file()
-            if fontfile is None:
-                raise AppError(
-                    "This name uses characters that cannot be rendered on this "
-                    "server. Please use a Latin or English name.",
-                    status_code=400,
-                )
-        _write_name(page, name, style, fontfile=fontfile)
+        _draw_name(page, name, style)
         data = document.tobytes(garbage=0, deflate=True)
     finally:
         document.close()
@@ -386,16 +416,7 @@ def generate_merged_pdf(
             try:
                 document.insert_pdf(template)
                 page = document[-1]
-                fontfile = None
-                if _needs_unicode_font(name):
-                    fontfile = fallback_font_file()
-                    if fontfile is None:
-                        raise AppError(
-                            "This name uses characters that cannot be rendered on "
-                            "this server. Please use a Latin or English name.",
-                            status_code=400,
-                        )
-                _write_name(page, name, style, fontfile=fontfile)
+                _draw_name(page, name, style)
             except AppError:
                 raise
             except Exception as error:  # noqa: BLE001
