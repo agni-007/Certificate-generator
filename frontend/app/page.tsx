@@ -67,8 +67,22 @@ function extensionOf(filename: string): string {
 }
 
 export default function Home() {
+  const [options, setOptions] = useState<ApiOptions | null>(null);
   const [optionsError, setOptionsError] = useState<string | null>(null);
-
+  const [template, setTemplate] = useState<TemplateState | null>(null);
+  const [templateBusy, setTemplateBusy] = useState(false);
+  const [templateError, setTemplateError] = useState<string | null>(null);
+  const [namesText, setNamesText] = useState("");
+  const [namesBusy, setNamesBusy] = useState(false);
+  const [namesError, setNamesError] = useState<string | null>(null);
+  const [style, setStyle] = useState<TextStyle>(DEFAULT_STYLE);
+  const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [result, setResult] = useState<{
+    blob: Blob;
+    count: number;
+  } | null>(null);
 
   const templateUrlRef = useRef<string | null>(null);
 
@@ -156,39 +170,44 @@ export default function Home() {
     setProgress(0);
   }, []);
 
-  const handleNamesFile = useCallback(async (file: File) => {
-    setNamesError(null);
-    if (!SHEET_EXTENSIONS.includes(extensionOf(file.name))) {
-      setNamesError(
-        "Unsupported file format. Please upload an .xlsx or .csv file.",
-      );
-      return;
-    }
-    setNamesBusy(true);
-    try {
-      const extracted = await extractNames(file);
-      if (extracted.length === 0) {
-        setNamesError("No valid names were found in the uploaded file.");
+  const handleNamesFile = useCallback(
+    async (file: File) => {
+      setNamesError(null);
+      if (!SHEET_EXTENSIONS.includes(extensionOf(file.name))) {
+        setNamesError(
+          "Unsupported file format. Please upload an .xlsx or .csv file.",
+        );
         return;
       }
-      setNamesText(extracted.join("\n"));
-      setResult(null);
-      setGenerateError(null);
-    } catch (error) {
-      setNamesError(
-        error instanceof ApiError
-          ? error.message
-          : "Unable to read the uploaded Excel file. Please check the file and try again.",
-      );
-    } finally {
-      setNamesBusy(false);
-    }
-  }, []);
+      setNamesBusy(true);
+      try {
+        const extracted = await extractNames(file);
+        if (extracted.length === 0) {
+          setNamesError("No valid names were found in the uploaded file.");
+          return;
+        }
+        setNamesText(extracted.join("\n"));
+        setResult(null);
+        setGenerateError(null);
+      } catch (error) {
+        setNamesError(
+          error instanceof ApiError
+            ? error.message
+            : "Unable to read the uploaded Excel file. Please check the file and try again.",
+        );
+      } finally {
+        setNamesBusy(false);
+      }
+    },
+    [],
+  );
 
   const handleGenerate = useCallback(async () => {
     if (!template) return;
     if (names.length > maxNames) {
-      setGenerateError(`Too many names. Please keep to ${maxNames} names or fewer.`);
+      setGenerateError(
+        `Too many names. Please keep to ${maxNames} names or fewer.`,
+      );
       return;
     }
     setGenerating(true);
@@ -214,10 +233,14 @@ export default function Home() {
     } finally {
       setGenerating(false);
     }
-  }, [template, names, style]);
+  }, [template, names, style, maxNames]);
 
   const sampleName = names[0] ?? "Sample Name";
-  const canGenerate = Boolean(template) && names.length > 0 && !generating && names.length <= maxNames;
+  const canGenerate =
+    Boolean(template) &&
+    names.length > 0 &&
+    !generating &&
+    names.length <= maxNames;
 
 
   return (

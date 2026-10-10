@@ -94,6 +94,8 @@ class Settings:
     temp_ttl_seconds: int
     cors_origins: tuple[str, ...]
     cors_origin_regex: str | None
+    api_key: str | None
+    rate_limit_generation: str | None
 
 
 def load_settings() -> Settings:
@@ -110,6 +112,8 @@ def load_settings() -> Settings:
             if cleaned and cleaned not in origins:
                 origins.append(cleaned)
     cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
+    api_key = os.getenv("API_KEY", "").strip() or None
+    rate_limit_generation = os.getenv("RATE_LIMIT_GENERATION", "").strip() or None
     return Settings(
         max_template_bytes=_env_int("MAX_TEMPLATE_SIZE_MB", 25) * 1024 * 1024,
         max_spreadsheet_bytes=_env_int("MAX_SPREADSHEET_SIZE_MB", 10) * 1024 * 1024,
@@ -127,7 +131,10 @@ def load_settings() -> Settings:
         temp_ttl_seconds=_env_int("TEMP_TTL_SECONDS", 6 * 60 * 60),
         cors_origins=tuple(origins),
         cors_origin_regex=cors_origin_regex,
+        api_key=api_key,
+        rate_limit_generation=rate_limit_generation,
     )
+
 
 
 settings = load_settings()

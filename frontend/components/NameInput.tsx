@@ -23,6 +23,7 @@ export default function NameInput({
   const [dragging, setDragging] = useState(false);
 
   const lines = value.split("\n").map((line) => line.trim()).filter(Boolean);
+  const count = lines.length;
   const overLimit = count > maxNames;
   return (
     <div className="space-y-3">
