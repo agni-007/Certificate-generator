@@ -59,6 +59,21 @@ class TestHealth:
         assert body["defaultAlignment"] == "center"
         assert set(body["alignments"]) == {"left", "center", "right"}
 
+    def test_cors_preflight(self, client):
+        response = client.options(
+            "/api/preview-certificate",
+            headers={
+                "Origin": "https://certificate-generator-three-theta.vercel.app",
+                "Access-Control-Request-Method": "POST",
+            },
+        )
+        assert response.status_code == 200
+        assert (
+            response.headers.get("access-control-allow-origin")
+            == "https://certificate-generator-three-theta.vercel.app"
+        )
+        assert response.headers.get("access-control-allow-credentials") == "true"
+
 
 class TestNameExtraction:
     def test_xlsx_with_name_column(self, client):

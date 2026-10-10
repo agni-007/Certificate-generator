@@ -68,7 +68,13 @@ async function request(input: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(`${API_URL}${input}`, init);
-  } catch {
+  } catch (error: unknown) {
+    if (
+      error instanceof Error &&
+      (error.name === "AbortError" || error.message.includes("aborted"))
+    ) {
+      throw error;
+    }
     throw new ApiError(
       "Could not reach the certificate service. Please try again.",
     );
@@ -108,6 +114,7 @@ export async function fetchCertificatePreview(
   file: File,
   name: string,
   style: TextStyle,
+  signal?: AbortSignal,
 ): Promise<PreviewResult> {
   const form = new FormData();
   form.append("template", file);
@@ -121,6 +128,7 @@ export async function fetchCertificatePreview(
   const response = await request("/api/preview-certificate", {
     method: "POST",
     body: form,
+    signal,
   });
   const blob = await response.blob();
   const width = Number(response.headers.get("X-Page-Width")) || 595;

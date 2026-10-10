@@ -82,7 +82,19 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    origins = os.getenv("CORS_ORIGINS", "*").strip()
+    origins_env = os.getenv("CORS_ORIGINS", "").strip()
+    default_origins = [
+        "https://certificate-generator-three-theta.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ]
+    if origins_env and origins_env != "*":
+        for o in origins_env.split(","):
+            cleaned = o.strip()
+            if cleaned and cleaned not in default_origins:
+                default_origins.append(cleaned)
     return Settings(
         max_template_bytes=_env_int("MAX_TEMPLATE_SIZE_MB", 25) * 1024 * 1024,
         max_spreadsheet_bytes=_env_int("MAX_SPREADSHEET_SIZE_MB", 10) * 1024 * 1024,
@@ -97,7 +109,7 @@ def load_settings() -> Settings:
             )
         ),
         temp_ttl_seconds=_env_int("TEMP_TTL_SECONDS", 6 * 60 * 60),
-        cors_origins=tuple(o.strip() for o in origins.split(",") if o.strip()),
+        cors_origins=tuple(default_origins),
     )
 
 

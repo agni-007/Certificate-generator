@@ -87,7 +87,7 @@ export default function CertificatePreview({
     };
   }, []);
 
-  // Background pixel-exact PyMuPDF rendering with 150ms debounce
+  // Background pixel-exact PyMuPDF rendering with 400ms debounce and AbortController cancellation
   useEffect(() => {
     if (!file) {
       if (renderedUrlRef.current) {
@@ -99,14 +99,19 @@ export default function CertificatePreview({
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
     setIsRendering(true);
 
     const requestKey = currentRenderKey;
     const timer = setTimeout(async () => {
       try {
-        const result = await fetchCertificatePreview(file, sampleName, style);
-        if (cancelled) return;
+        const result = await fetchCertificatePreview(
+          file,
+          sampleName,
+          style,
+          controller.signal,
+        );
+        if (controller.signal.aborted) return;
 
         if (renderedUrlRef.current) {
           URL.revokeObjectURL(renderedUrlRef.current);
@@ -114,28 +119,26 @@ export default function CertificatePreview({
         renderedUrlRef.current = result.url;
         loadedRenderKeyRef.current = requestKey;
         setRenderedUrl(result.url);
-      } catch (err) {
+      } catch (err: unknown) {
+        if (
+          err instanceof Error &&
+          (err.name === "AbortError" || controller.signal.aborted)
+        ) {
+          return;
+        }
         console.warn("Failed to render exact preview:", err);
       } finally {
-        if (!cancelled) setIsRendering(false);
+        if (!controller.signal.aborted) {
+          setIsRendering(false);
+        }
       }
-    }, 150);
+    }, 400);
 
     return () => {
-      cancelled = true;
       clearTimeout(timer);
+      controller.abort();
     };
-  }, [
-    file,
-    sampleName,
-    style.font,
-    style.fontSize,
-    style.color,
-    style.alignment,
-    style.x,
-    style.y,
-    currentRenderKey,
-  ]);
+  }, [file, sampleName, style, currentRenderKey]);
 
   if (!templateUrl) {
     return (
@@ -290,9 +293,17 @@ export default function CertificatePreview({
       {/* ─── Info bar ─── */}
       <div className="flex items-center justify-between gap-2 text-xs text-slate-400">
         <span>Click or drag anywhere to position · arrow keys to nudge</span>
-        <span className="shrink-0 font-mono text-slate-600">
-          X {style.x.toFixed(1)}% · Y {style.y.toFixed(1)}%
-        </span>
+        <div className="flex items-center gap-2">
+          {isRendering && (
+            <span className="flex items-center gap-1.5 text-[11px] font-medium text-indigo-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-600 animate-ping" />
+              Updating preview…
+            </span>
+          )}
+          <span className="shrink-0 font-mono text-slate-600">
+            X {style.x.toFixed(1)}% · Y {style.y.toFixed(1)}%
+          </span>
+        </div>
       </div>
 
       {/* ─── D-Pad controls ─── */}
