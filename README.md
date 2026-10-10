@@ -98,7 +98,8 @@ npm run build
 - `NEXT_PUBLIC_API_URL`: Backend API endpoint (e.g. `http://localhost:8000` locally or `https://your-backend.onrender.com` in production).
 
 ### Backend Config Options (Optional)
-- `CORS_ORIGINS`: Comma-separated allowed origin URLs (defaults to `*`).
+- `CORS_ORIGINS`: Comma-separated extra allowed origins, appended to the built-in allowlist (localhost + the production Vercel URL). It does **not** default to `*`; wildcards are ignored because credentials are enabled. Use `CORS_ORIGIN_REGEX` instead.
+- `CORS_ORIGIN_REGEX`: Regular expression of allowed origins, useful for Vercel preview deployments (e.g. `https://.*\.vercel\.app`). Unset by default.
 - `MAX_TEMPLATE_SIZE_MB`: Max template upload size (defaults to `25`).
 - `MAX_SPREADSHEET_SIZE_MB`: Max Excel/CSV upload size (defaults to `10`).
 - `MAX_NAMES`: Max names per bulk generation request (defaults to `2000`).

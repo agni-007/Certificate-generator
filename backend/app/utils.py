@@ -72,6 +72,15 @@ def _env_int(name: str, default: int) -> int:
     return value if value > 0 else default
 
 
+DEFAULT_CORS_ORIGINS: tuple[str, ...] = (
+    "https://certificate-generator-three-theta.vercel.app",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5173",
+)
+
+
 @dataclass(frozen=True)
 class Settings:
     max_template_bytes: int
@@ -84,22 +93,23 @@ class Settings:
     temp_root: Path
     temp_ttl_seconds: int
     cors_origins: tuple[str, ...]
+    cors_origin_regex: str | None
 
 
 def load_settings() -> Settings:
+    origins = list(DEFAULT_CORS_ORIGINS)
     origins_env = os.getenv("CORS_ORIGINS", "").strip()
-    default_origins = [
-        "https://certificate-generator-three-theta.vercel.app",
-        "http://localhost:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
-    ]
-    if origins_env and origins_env != "*":
-        for o in origins_env.split(","):
-            cleaned = o.strip()
-            if cleaned and cleaned not in default_origins:
-                default_origins.append(cleaned)
+    if origins_env == "*":
+        logger.warning(
+            "CORS_ORIGINS=* is ignored: credentials require an explicit "
+            "allowlist. Use CORS_ORIGIN_REGEX for dynamic hosts."
+        )
+    elif origins_env:
+        for origin in origins_env.split(","):
+            cleaned = origin.strip()
+            if cleaned and cleaned not in origins:
+                origins.append(cleaned)
+    cors_origin_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip() or None
     return Settings(
         max_template_bytes=_env_int("MAX_TEMPLATE_SIZE_MB", 25) * 1024 * 1024,
         max_spreadsheet_bytes=_env_int("MAX_SPREADSHEET_SIZE_MB", 10) * 1024 * 1024,
@@ -115,7 +125,8 @@ def load_settings() -> Settings:
             )
         ),
         temp_ttl_seconds=_env_int("TEMP_TTL_SECONDS", 6 * 60 * 60),
-        cors_origins=tuple(default_origins),
+        cors_origins=tuple(origins),
+        cors_origin_regex=cors_origin_regex,
     )
 
 

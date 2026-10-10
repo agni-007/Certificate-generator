@@ -91,24 +91,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-ALLOWED_ORIGINS = [
-    "https://certificate-generator-three-theta.vercel.app",
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "http://127.0.0.1:3000",
-    "http://127.0.0.1:5173",
-]
-for origin in settings.cors_origins:
-    if origin and origin != "*" and origin not in ALLOWED_ORIGINS:
-        ALLOWED_ORIGINS.append(origin)
+ALLOWED_ORIGINS = list(settings.cors_origins)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Disposition", "X-Certificate-Count", "X-Page-Width", "X-Page-Height"],
+    expose_headers=["Content-Disposition", "X-Certificate-Count", "X-Output-Mode", "X-Page-Width", "X-Page-Height"],
 )
 
 

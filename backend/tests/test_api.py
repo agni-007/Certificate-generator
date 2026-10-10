@@ -516,6 +516,79 @@ class TestEventLoopResponsiveness:
         assert latency < 0.5, f"/health took {latency:.2f}s during generation"
 
 
+class TestCors:
+    def test_defaults_are_an_explicit_allowlist(self):
+        from app.utils import DEFAULT_CORS_ORIGINS
+
+        assert settings.cors_origins == DEFAULT_CORS_ORIGINS
+        assert "*" not in settings.cors_origins
+        assert "http://localhost:3000" in settings.cors_origins
+
+    def test_middleware_uses_settings_as_single_source(self):
+        from starlette.middleware.cors import CORSMiddleware
+
+        entry = next(
+            middleware
+            for middleware in main_module.app.user_middleware
+            if middleware.cls is CORSMiddleware
+        )
+        assert entry.kwargs["allow_origins"] == list(settings.cors_origins)
+        assert entry.kwargs.get("allow_origin_regex") == settings.cors_origin_regex
+
+    def test_env_origins_are_appended(self, monkeypatch):
+        from app.utils import load_settings
+
+        monkeypatch.setenv("CORS_ORIGINS", "https://a.example, https://b.example")
+        loaded = load_settings()
+        assert "https://a.example" in loaded.cors_origins
+        assert "https://b.example" in loaded.cors_origins
+        assert "http://localhost:3000" in loaded.cors_origins
+
+    def test_wildcard_env_is_ignored(self, monkeypatch):
+        from app.utils import load_settings
+
+        monkeypatch.setenv("CORS_ORIGINS", "*")
+        loaded = load_settings()
+        assert "*" not in loaded.cors_origins
+
+    def test_origin_regex_env(self, monkeypatch):
+        from app.utils import load_settings
+
+        monkeypatch.setenv("CORS_ORIGIN_REGEX", r"https://.*\.vercel\.app")
+        loaded = load_settings()
+        assert loaded.cors_origin_regex == r"https://.*\.vercel\.app"
+
+    def test_origin_regex_allows_preview_urls(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+        from starlette.middleware.cors import CORSMiddleware
+
+        test_app = FastAPI()
+        test_app.add_middleware(
+            CORSMiddleware,
+            allow_origins=[],
+            allow_origin_regex=r"https://.*\.vercel\.app",
+            allow_credentials=True,
+        )
+
+        @test_app.get("/ping")
+        def ping() -> dict[str, bool]:
+            return {"ok": True}
+
+        with TestClient(test_app) as test_client:
+            response = test_client.options(
+                "/ping",
+                headers={
+                    "Origin": "https://my-branch.vercel.app",
+                    "Access-Control-Request-Method": "GET",
+                },
+            )
+        assert (
+            response.headers.get("access-control-allow-origin")
+            == "https://my-branch.vercel.app"
+        )
+
+
 class TestTempFiles:
     def test_temporary_files_are_cleaned(self, client, templates):
         before = set(settings.temp_root.glob("req-*")) if settings.temp_root.exists() else set()
