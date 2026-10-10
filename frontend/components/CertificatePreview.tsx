@@ -3,23 +3,83 @@
 import { useEffect, useRef, useState } from "react";
 import { fetchCertificatePreview, type TextStyle } from "@/lib/api";
 
-const FONT_STACKS: Record<string, string> = {
-  times: '"Times New Roman", Times, serif',
-  "times-italic": 'italic "Times New Roman", Times, serif',
-  "times-bold": 'bold "Times New Roman", Times, serif',
-  "times-bolditalic": 'bold italic "Times New Roman", Times, serif',
-  helvetica: "Helvetica, Arial, sans-serif",
-  "helvetica-bold": "bold Helvetica, Arial, sans-serif",
-  "helvetica-oblique": "oblique Helvetica, Arial, sans-serif",
-  "helvetica-boldoblique": "bold oblique Helvetica, Arial, sans-serif",
-  courier: '"Courier New", Courier, monospace',
-  "courier-bold": 'bold "Courier New", Courier, monospace',
-  "courier-oblique": 'oblique "Courier New", Courier, monospace',
-  "courier-boldoblique": 'bold oblique "Courier New", Courier, monospace',
+interface FontStyle {
+  fontFamily: string;
+  fontStyle: "normal" | "italic" | "oblique";
+  fontWeight: "normal" | "bold";
+}
+
+const FONT_STYLES: Record<string, FontStyle> = {
+  times: {
+    fontFamily: '"Times New Roman", Times, serif',
+    fontStyle: "normal",
+    fontWeight: "normal",
+  },
+  "times-italic": {
+    fontFamily: '"Times New Roman", Times, serif',
+    fontStyle: "italic",
+    fontWeight: "normal",
+  },
+  "times-bold": {
+    fontFamily: '"Times New Roman", Times, serif',
+    fontStyle: "normal",
+    fontWeight: "bold",
+  },
+  "times-bolditalic": {
+    fontFamily: '"Times New Roman", Times, serif',
+    fontStyle: "italic",
+    fontWeight: "bold",
+  },
+  helvetica: {
+    fontFamily: "Helvetica, Arial, sans-serif",
+    fontStyle: "normal",
+    fontWeight: "normal",
+  },
+  "helvetica-bold": {
+    fontFamily: "Helvetica, Arial, sans-serif",
+    fontStyle: "normal",
+    fontWeight: "bold",
+  },
+  "helvetica-oblique": {
+    fontFamily: "Helvetica, Arial, sans-serif",
+    fontStyle: "oblique",
+    fontWeight: "normal",
+  },
+  "helvetica-boldoblique": {
+    fontFamily: "Helvetica, Arial, sans-serif",
+    fontStyle: "oblique",
+    fontWeight: "bold",
+  },
+  courier: {
+    fontFamily: '"Courier New", Courier, monospace',
+    fontStyle: "normal",
+    fontWeight: "normal",
+  },
+  "courier-bold": {
+    fontFamily: '"Courier New", Courier, monospace',
+    fontStyle: "normal",
+    fontWeight: "bold",
+  },
+  "courier-oblique": {
+    fontFamily: '"Courier New", Courier, monospace',
+    fontStyle: "oblique",
+    fontWeight: "normal",
+  },
+  "courier-boldoblique": {
+    fontFamily: '"Courier New", Courier, monospace',
+    fontStyle: "oblique",
+    fontWeight: "bold",
+  },
 };
 
+/** Split a PDF font key into the three independent CSS properties. */
+export function fontStyle(font: string): FontStyle {
+  return FONT_STYLES[font] ?? FONT_STYLES["times-italic"];
+}
+
+/** Backwards-compatible helper returning only the CSS font-family. */
 export function fontStack(font: string): string {
-  return FONT_STACKS[font] ?? FONT_STACKS["times-italic"];
+  return fontStyle(font).fontFamily;
 }
 
 interface Props {
@@ -163,6 +223,7 @@ export default function CertificatePreview({
 
   const scale = canvasWidth > 0 && pageWidth > 0 ? canvasWidth / pageWidth : 1;
   const fontSizePx = Math.max(1, style.fontSize * scale);
+  const activeFont = fontStyle(style.font);
 
   const translateX =
     style.alignment === "center"
@@ -267,7 +328,9 @@ export default function CertificatePreview({
             <span
               className="block whitespace-nowrap rounded px-1 transition-none"
               style={{
-                fontFamily: fontStack(style.font),
+                fontFamily: activeFont.fontFamily,
+                fontStyle: activeFont.fontStyle,
+                fontWeight: activeFont.fontWeight,
                 fontSize: `${fontSizePx}px`,
                 color: style.color,
                 textAlign: style.alignment,
