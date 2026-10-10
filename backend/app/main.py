@@ -16,9 +16,9 @@ from starlette.background import BackgroundTask
 from starlette.responses import FileResponse
 
 from .generator import (
-    ALIGNMENTS,
     DEFAULT_ALIGNMENT,
     DEFAULT_FONT,
+    FONT_LABELS,
     FONTS,
     build_style,
     build_zip,
@@ -53,20 +53,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger("certificate_generator")
 
-FONT_LABELS = {
-    "times-italic": "Times Italic",
-    "times": "Times Roman",
-    "times-bold": "Times Bold",
-    "times-bolditalic": "Times Bold Italic",
-    "helvetica": "Helvetica",
-    "helvetica-bold": "Helvetica Bold",
-    "helvetica-oblique": "Helvetica Oblique",
-    "helvetica-boldoblique": "Helvetica Bold Oblique",
-    "courier": "Courier",
-    "courier-bold": "Courier Bold",
-    "courier-oblique": "Courier Oblique",
-    "courier-boldoblique": "Courier Bold Oblique",
-}
 
 
 ZIP_FILENAME = "certificates.zip"

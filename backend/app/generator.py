@@ -50,9 +50,11 @@ FONTS: dict[str, str] = {
     "courier-oblique": "Courier-Oblique",
     "courier-boldoblique": "Courier-BoldOblique",
 }
+FONT_LABELS = {k: v.replace("-", " ") for k, v in FONTS.items()}
 DEFAULT_FONT = "times-italic"
 
 ALIGNMENTS = {"left", "center", "right"}
+
 DEFAULT_ALIGNMENT = "center"
 
 # Fallback TrueType fonts, used only when a name cannot be encoded with the

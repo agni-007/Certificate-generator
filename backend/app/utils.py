@@ -291,11 +291,10 @@ def request_workspace() -> Iterator[Path]:
     """Per-request scratch directory. Always removed, success or failure."""
     workspace = create_workspace()
     try:
-        for sub in ("template", "input", "output"):
-            (workspace / sub).mkdir(exist_ok=True)
         yield workspace
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
 
 
 def create_workspace() -> Path:
