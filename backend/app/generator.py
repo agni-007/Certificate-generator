@@ -72,6 +72,12 @@ DEFAULT_IMAGE_DPI = 300.0
 MIN_IMAGE_DPI = 72.0
 MAX_IMAGE_DPI = 600.0
 
+# Image templates are downscaled/recompressed once so a single template is not
+# copied at full resolution into every generated PDF.
+MAX_IMAGE_DIMENSION = 3508  # long side cap, roughly A4 at 300 DPI
+IMAGE_RECOMPRESS_QUALITY = 80
+IMAGE_KEEP_ORIGINAL_BYTES = 2 * 1024 * 1024
+
 
 @dataclass(frozen=True)
 class TextStyle:
@@ -169,8 +175,21 @@ def _image_dpi(image: Image.Image) -> float:
     return DEFAULT_IMAGE_DPI
 
 
+def _should_recompress(image: Image.Image, original_bytes: int) -> bool:
+    """True when an image template is large enough to be worth shrinking."""
+    return (
+        max(image.size) > MAX_IMAGE_DIMENSION
+        or original_bytes > IMAGE_KEEP_ORIGINAL_BYTES
+    )
+
+
 def image_to_pdf(data: bytes) -> pymupdf.Document:
-    """Convert a PNG/JPG/JPEG into a one page PDF, keeping its aspect ratio."""
+    """Convert a PNG/JPG/JPEG into a one page PDF, keeping its aspect ratio.
+
+    Large image templates are downscaled (long side capped at
+    ``MAX_IMAGE_DIMENSION``) and recompressed once here, so the resulting PDF
+    stays small and every generated certificate shares the same compact copy.
+    """
     try:
         image = Image.open(io.BytesIO(data))
         image.load()
@@ -195,8 +214,21 @@ def image_to_pdf(data: bytes) -> pymupdf.Document:
         if fit < 1.0:
             dpi = dpi / fit
 
+        save_kwargs: dict[str, object] = {}
+        if _should_recompress(image, len(data)):
+            scale = min(1.0, MAX_IMAGE_DIMENSION / max(width_px, height_px))
+            if scale < 1.0:
+                new_size = (
+                    max(1, round(width_px * scale)),
+                    max(1, round(height_px * scale)),
+                )
+                image = image.resize(new_size, Image.LANCZOS)
+                # Keep the physical page size the same after downscaling.
+                dpi = dpi * scale
+            save_kwargs["quality"] = IMAGE_RECOMPRESS_QUALITY
+
         buffer = io.BytesIO()
-        image.save(buffer, format="PDF", resolution=dpi)
+        image.save(buffer, format="PDF", resolution=dpi, **save_kwargs)
         buffer.seek(0)
 
     return pymupdf.open(stream=buffer.read(), filetype="pdf")
@@ -331,6 +363,54 @@ def generate_pdfs(
         path.write_bytes(data)
         written.append(path)
     return written
+
+
+def generate_merged_pdf(
+    template: pymupdf.Document,
+    names: Sequence[str],
+    style: TextStyle,
+    output_path: Path,
+) -> Path:
+    """Write every certificate into one multi-page PDF.
+
+    The template is imported once per name but identical objects (notably the
+    background image) are stored only once thanks to ``garbage=4`` dedup, so a
+    50-name run produces roughly one template + 50 text layers instead of 50
+    full copies.
+    """
+    if not names:
+        raise AppError(MSG_GENERATION_FAILED, status_code=500)
+    document = pymupdf.open()
+    try:
+        for name in names:
+            try:
+                document.insert_pdf(template)
+                page = document[-1]
+                fontfile = None
+                if _needs_unicode_font(name):
+                    fontfile = fallback_font_file()
+                    if fontfile is None:
+                        raise AppError(
+                            "This name uses characters that cannot be rendered on "
+                            "this server. Please use a Latin or English name.",
+                            status_code=400,
+                        )
+                _write_name(page, name, style, fontfile=fontfile)
+            except AppError:
+                raise
+            except Exception as error:  # noqa: BLE001
+                logger.exception("Generation failed for %r: %s", name, error)
+                raise AppError(MSG_GENERATION_FAILED, status_code=500) from None
+        data = document.tobytes(garbage=4, deflate=True)
+    finally:
+        document.close()
+    output_path.write_bytes(data)
+    return output_path
+
+
+def estimate_output_bytes(template_bytes: int, name_count: int) -> int:
+    """Rough pre-flight size estimate: one template copy per name."""
+    return max(0, int(template_bytes)) * max(0, int(name_count))
 
 
 def build_zip(files: Sequence[Path], zip_path: Path) -> Path:

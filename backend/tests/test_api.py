@@ -5,14 +5,24 @@ from __future__ import annotations
 import io
 import json
 import zipfile
+from dataclasses import replace
 
+import numpy as np
 import pandas as pd
 import pymupdf
 import pytest
+from PIL import Image
 
+from app import main as main_module
 from app.utils import settings
 from conftest import NAMES, make_csv, make_xlsx
-from app.generator import FONTS
+from app.generator import (
+    FONTS,
+    IMAGE_KEEP_ORIGINAL_BYTES,
+    MAX_IMAGE_DIMENSION,
+    estimate_output_bytes,
+    image_to_pdf,
+)
 
 
 def generate(client, template_file, names=NAMES, **overrides):
@@ -467,3 +477,127 @@ class TestTempFiles:
         assert response.status_code == 200
         after = set(settings.temp_root.glob("req-*")) if settings.temp_root.exists() else set()
         assert after == before
+
+
+def _pdf_page_count(data: bytes) -> int:
+    document = pymupdf.open(stream=data, filetype="pdf")
+    try:
+        return document.page_count
+    finally:
+        document.close()
+
+
+class TestImageRecompression:
+    def _large_noise_png(self) -> bytes:
+        rng = np.random.default_rng(7)
+        image = Image.fromarray(
+            rng.integers(0, 256, (3800, 1200, 3), dtype=np.uint8), "RGB"
+        )
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    def test_large_image_is_downscaled_and_keeps_page_size(self):
+        source = self._large_noise_png()
+        document = image_to_pdf(source)
+        try:
+            page = document[0]
+            width, height = page.rect.width, page.rect.height
+        finally:
+            document.close()
+        # The image is portrait after downscaling; page keeps the aspect ratio.
+        assert height > width
+        assert height <= 842.0 and width <= 595.3
+        assert width / height == pytest.approx(1200 / 3800, rel=0.01)
+
+    def test_recompressed_pdf_is_smaller_than_source(self):
+        source = self._large_noise_png()
+        document = image_to_pdf(source)
+        try:
+            restored = document.tobytes()
+        finally:
+            document.close()
+        assert len(restored) < len(source)
+
+    def test_small_image_is_kept_untouched(self):
+        image = Image.new("RGB", (800, 600), (12, 34, 56))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        source = buffer.getvalue()
+        assert len(source) <= IMAGE_KEEP_ORIGINAL_BYTES
+        assert max(800, 600) <= MAX_IMAGE_DIMENSION
+        document = image_to_pdf(source)
+        try:
+            page = document[0]
+            # No downscale: the page box matches the source pixels at 300 DPI.
+            assert page.rect.width == pytest.approx(800 * 72 / 300, rel=0.01)
+            assert page.rect.height == pytest.approx(600 * 72 / 300, rel=0.01)
+        finally:
+            document.close()
+
+
+class TestMergedOutput:
+    def test_merged_returns_single_multipage_pdf(self, client, templates):
+        response = generate(client, templates["jpg"], names=NAMES, output="merged")
+        assert response.status_code == 200
+        assert response.headers["content-type"] == "application/pdf"
+        assert response.headers["x-output-mode"] == "merged"
+        assert "certificates.pdf" in response.headers["content-disposition"]
+        assert _pdf_page_count(response.content) == len(NAMES)
+        text = text_of(response.content)
+        for name in NAMES:
+            assert name in text
+
+    def test_merged_is_smaller_than_individual_zip(self, client, big_jpg_template):
+        names = [f"Participant {index:03d}" for index in range(20)]
+        individual = generate(
+            client, ("big.jpg", big_jpg_template, "image/jpeg"), names=names
+        )
+        merged = generate(
+            client,
+            ("big.jpg", big_jpg_template, "image/jpeg"),
+            names=names,
+            output="merged",
+        )
+        assert individual.status_code == 200
+        assert merged.status_code == 200
+        assert _pdf_page_count(merged.content) == len(names)
+        # The template is stored once instead of once per certificate.
+        assert len(merged.content) * 4 < len(individual.content)
+
+    def test_individual_is_default_and_unchanged(self, client, templates):
+        default = generate(client, templates["pdf"], names=NAMES)
+        explicit = generate(client, templates["pdf"], names=NAMES, output="individual")
+        assert default.status_code == explicit.status_code == 200
+        assert default.headers["x-output-mode"] == "individual"
+        assert default.headers["content-type"] == "application/zip"
+
+    def test_invalid_output_mode_rejected(self, client, templates):
+        response = generate(client, templates["pdf"], names=NAMES, output="bogus")
+        assert response.status_code == 400
+        assert "output mode" in response.json()["detail"].lower()
+
+
+class TestOutputSizeGuard:
+    def test_estimate_output_bytes(self):
+        assert estimate_output_bytes(1000, 5) == 5000
+        assert estimate_output_bytes(0, 5) == 0
+
+    def test_oversized_request_returns_friendly_413(self, client, templates, monkeypatch):
+        monkeypatch.setattr(
+            main_module,
+            "settings",
+            replace(settings, max_total_output_bytes=100),
+        )
+        response = generate(client, templates["pdf"], names=NAMES)
+        assert response.status_code == 413
+        assert "too much data" in response.json()["detail"].lower()
+
+    def test_merged_skips_size_guard(self, client, templates, monkeypatch):
+        monkeypatch.setattr(
+            main_module,
+            "settings",
+            replace(settings, max_total_output_bytes=100),
+        )
+        response = generate(client, templates["pdf"], names=NAMES, output="merged")
+        assert response.status_code == 200

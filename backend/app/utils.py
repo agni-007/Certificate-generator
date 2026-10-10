@@ -41,6 +41,10 @@ MSG_GENERATION_FAILED = (
     "Something went wrong while generating the certificates. Please try again."
 )
 MSG_TEMPLATE_TOO_LARGE = "The certificate template is too large."
+MSG_OUTPUT_TOO_LARGE = (
+    "This request would produce too much data to download at once. "
+    "Please use fewer names, a smaller template, or choose the merged PDF option."
+)
 MSG_SHEET_TOO_LARGE = "The uploaded Excel/CSV file is too large."
 MSG_TOO_MANY_NAMES = "Too many names in one request."
 MSG_BAD_FILE = "The uploaded file appears to be corrupted or is not a valid file."
@@ -74,6 +78,7 @@ class Settings:
     max_spreadsheet_bytes: int
     max_names: int
     max_name_length: int
+    max_total_output_bytes: int
     preview_dpi: int
     preview_max_pixels: int
     temp_root: Path
@@ -100,6 +105,7 @@ def load_settings() -> Settings:
         max_spreadsheet_bytes=_env_int("MAX_SPREADSHEET_SIZE_MB", 10) * 1024 * 1024,
         max_names=_env_int("MAX_NAMES", 2000),
         max_name_length=_env_int("MAX_NAME_LENGTH", 120),
+        max_total_output_bytes=_env_int("MAX_TOTAL_OUTPUT_MB", 1024) * 1024 * 1024,
         preview_dpi=_env_int("PREVIEW_DPI", 110),
         preview_max_pixels=_env_int("PREVIEW_MAX_PIXELS", 1600),
         temp_root=Path(
@@ -272,6 +278,17 @@ def unique_path(directory: Path, filename: str) -> Path:
 @contextmanager
 def request_workspace() -> Iterator[Path]:
     """Per-request scratch directory. Always removed, success or failure."""
+    workspace = create_workspace()
+    try:
+        for sub in ("template", "input", "output"):
+            (workspace / sub).mkdir(exist_ok=True)
+        yield workspace
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
+
+
+def create_workspace() -> Path:
+    """Create a per-request scratch directory (caller removes it when done)."""
     root = settings.temp_root
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -279,12 +296,8 @@ def request_workspace() -> Iterator[Path]:
     except OSError:
         logger.exception("Could not create a temporary workspace")
         raise AppError(MSG_GENERATION_FAILED, status_code=500) from None
-    try:
-        for sub in ("template", "input", "output"):
-            (workspace / sub).mkdir(exist_ok=True)
-        yield workspace
-    finally:
-        shutil.rmtree(workspace, ignore_errors=True)
+    (workspace / "output").mkdir(exist_ok=True)
+    return workspace
 
 
 def purge_stale_temp_files(now: float | None = None) -> int:

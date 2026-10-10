@@ -77,6 +77,19 @@ def jpg_template() -> bytes:
 
 
 @pytest.fixture(scope="session")
+def big_jpg_template() -> bytes:
+    """A noisy JPEG large enough that copies would dominate the output."""
+    import numpy as np
+
+    rng = np.random.default_rng(2024)
+    array = rng.integers(0, 256, (1600, 1200, 3), dtype=np.uint8)
+    image = Image.fromarray(array, "RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=80, dpi=(300, 300))
+    return buffer.getvalue()
+
+
+@pytest.fixture(scope="session")
 def client() -> TestClient:
     with TestClient(app) as test_client:
         yield test_client

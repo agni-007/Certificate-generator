@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import shutil
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated
@@ -11,6 +12,8 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from starlette.background import BackgroundTask
+from starlette.responses import FileResponse
 
 from .generator import (
     ALIGNMENTS,
@@ -19,6 +22,8 @@ from .generator import (
     FONTS,
     build_style,
     build_zip,
+    estimate_output_bytes,
+    generate_merged_pdf,
     generate_pdfs,
     load_template,
     render_certificate_png,
@@ -31,6 +36,8 @@ from .utils import (
     MSG_NO_NAMES,
     MSG_BAD_REQUEST,
     MSG_NO_TEMPLATE,
+    MSG_OUTPUT_TOO_LARGE,
+    create_workspace,
     enforce_name_limit,
     parse_name_payload,
     purge_stale_temp_files,
@@ -63,6 +70,8 @@ FONT_LABELS = {
 
 
 ZIP_FILENAME = "certificates.zip"
+MERGED_FILENAME = "certificates.pdf"
+OUTPUT_MODES = {"individual", "merged"}
 UPLOAD_CHUNK = 1024 * 1024
 
 
@@ -156,6 +165,8 @@ async def options() -> dict[str, object]:
         "maxNames": settings.max_names,
         "maxTemplateSizeMb": settings.max_template_bytes // (1024 * 1024),
         "maxSpreadsheetSizeMb": settings.max_spreadsheet_bytes // (1024 * 1024),
+        "maxTotalOutputMb": settings.max_total_output_bytes // (1024 * 1024),
+        "outputModes": ["individual", "merged"],
         "templateExtensions": [".pdf", ".png", ".jpg", ".jpeg"],
         "spreadsheetExtensions": [".xlsx", ".csv"],
     }
@@ -265,6 +276,7 @@ async def generate(
     fontSize: Annotated[float, Form()] = 37.0,
     color: Annotated[str, Form()] = "#ffffff",
     alignment: Annotated[str, Form()] = DEFAULT_ALIGNMENT,
+    output: Annotated[str, Form(description="individual or merged")] = "individual",
 ) -> Response:
     if not template or not template.filename:
         raise AppError(MSG_NO_TEMPLATE)
@@ -273,6 +285,10 @@ async def generate(
     if not name_list:
         raise AppError(MSG_NO_NAMES)
 
+    output_mode = (output or "individual").strip().lower()
+    if output_mode not in OUTPUT_MODES:
+        raise AppError("Unsupported output mode. Use 'individual' or 'merged'.")
+
     style = build_style(x, y, font, fontSize, color, alignment)
 
     data = await read_upload(template, settings.max_template_bytes)
@@ -280,24 +296,59 @@ async def generate(
         raise AppError(MSG_NO_TEMPLATE)
     validate_template_upload(template.filename, data)
 
-    with request_workspace() as workspace:
+    # Merged output stores the template once, so only the individual ZIP can
+    # blow up as template size x number of names.
+    if output_mode == "individual":
+        estimated = estimate_output_bytes(len(data), len(name_list))
+        if estimated > settings.max_total_output_bytes:
+            logger.info(
+                "Rejected oversized request: %s bytes estimated for %s name(s)",
+                estimated,
+                len(name_list),
+            )
+            raise AppError(MSG_OUTPUT_TOO_LARGE, status_code=413)
+
+    workspace = create_workspace()
+    try:
         document = load_template(data, template.filename)
         try:
-            files = generate_pdfs(document, name_list, style, workspace / "output")
+            if output_mode == "merged":
+                path = generate_merged_pdf(
+                    document,
+                    name_list,
+                    style,
+                    workspace / "output" / MERGED_FILENAME,
+                )
+                media_type = "application/pdf"
+                filename = MERGED_FILENAME
+            else:
+                files = generate_pdfs(document, name_list, style, workspace / "output")
+                path = build_zip(files, workspace / "output" / ZIP_FILENAME)
+                media_type = "application/zip"
+                filename = ZIP_FILENAME
         finally:
             document.close()
-        zip_path = build_zip(files, workspace / "output" / ZIP_FILENAME)
-        zip_bytes = zip_path.read_bytes()
-        logger.info("Generated %s certificate(s) into a ZIP (%s bytes)", len(files), len(zip_bytes))
+    except BaseException:
+        # Never leak a workspace when generation fails before streaming starts.
+        shutil.rmtree(workspace, ignore_errors=True)
+        raise
 
-    return Response(
-        content=zip_bytes,
-        media_type="application/zip",
+    logger.info(
+        "Generated %s certificate(s) as %s (%s bytes on disk)",
+        len(name_list),
+        output_mode,
+        path.stat().st_size,
+    )
+    return FileResponse(
+        path,
+        media_type=media_type,
+        filename=filename,
         headers={
-            "Content-Disposition": f'attachment; filename="{ZIP_FILENAME}"',
             "X-Certificate-Count": str(len(name_list)),
+            "X-Output-Mode": output_mode,
             "Cache-Control": "no-store",
         },
+        background=BackgroundTask(shutil.rmtree, workspace, ignore_errors=True),
     )
 
 
